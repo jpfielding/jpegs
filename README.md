@@ -95,3 +95,4 @@ Aided heavily by Claude.ai, esp in the opengl work.
 
 MIT
 # jpegs
+# jpegs
