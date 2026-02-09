@@ -73,11 +73,3 @@ install-codex: # opena-ai codex.rs
 	tar -xvzf /tmp/codex.tar.gz -C /tmp && \
 	mv /tmp/codex-$${ARCH}-$${OS} ${HOME}/bin/codex && \
 	chmod +x ${HOME}/bin/codex
-
-build-ctl: ## Builds the goxel ui
-	mkdir -p bin
-	CGO_ENABLED=0 go build \
-		-trimpath \
-		-ldflags "-s -w -X 'main.GitSHA=$(GIT_SHA)'" \
-		-o bin/goxel \
-		cmd/main.go
