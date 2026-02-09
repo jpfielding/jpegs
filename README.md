@@ -1,98 +1,58 @@
-# goxel
+# Compression Codecs
 
-A fast, modern DICOM image viewer built with Go and the Fyne toolkit.
+This package provides pure Go implementations of lossless image compression formats used in DICOS/DICOM imaging.
 
-![goxel in action](goxel.gif)
+## Supported Formats
 
-## Features
+| Package | Format | DICOM Transfer Syntax | Description |
+|---------|--------|----------------------|-------------|
+| [jpeg2k](jpeg2k/) | JPEG 2000 | `1.2.840.10008.1.2.4.90` | Wavelet-based, excellent compression |
+| [jpegli](jpegli/) | JPEG Lossless | `1.2.840.10008.1.2.4.70` | Traditional DPCM-based |
+| [jpegls](jpegls/) | JPEG-LS | `1.2.840.10008.1.2.4.80/81` | LOCO-I algorithm, very efficient |
+| [rle](rle/) | RLE (PackBits) | `1.2.840.10008.1.2.5` | Run-length encoding |
 
-- **Multi-format DICOM support** - Load single files, directories, or multi-frame DICOM
-- **3D Volume Rendering** - Real-time volume visualization with adjustable opacity and thresholds
-- **2D Slice Navigation** - Browse through axial slices with window/level controls
-- **Medical Imaging Presets** - Built-in window presets for Soft Tissue, Bone, Lung, Brain, and Liver
-- **Material Segmentation** - Color-coded tissue classification (Background, Soft Tissue, Dense Tissue, Bone, Metal)
-- **JPEG-LS Compression** - Native support for lossless DICOM compression
-- **Cross-platform** - Runs on macOS, Linux, and Windows
+## Feature Comparison
 
-## Installation
-
-```bash
-go install github.com/jpfielding/goxel/cmd@latest
-```
-
-Or build from source:
-
-```bash
-git clone https://github.com/jpfielding/goxel.git
-cd goxel
-go build -o goxel ./cmd
-```
+| Feature | jpeg2k | jpegli | jpegls | rle |
+|---------|--------|--------|--------|-----|
+| Lossless | Yes | Yes | Yes | Yes |
+| Near-lossless | No | No | Yes | No |
+| 8-bit Gray | Yes | Yes | Yes | Yes |
+| 16-bit Gray | Yes | Yes | Yes | Yes |
+| RGB | Yes | No | No | No |
+| Compression Ratio | Excellent | Good | Excellent | Fair |
+| Speed | Moderate | Fast | Fast | Very Fast |
 
 ## Usage
 
-### Viewer
+All codecs follow a consistent API pattern where possible:
 
-```bash
-# Open a DICOM file
-goxel goxel -p /path/to/file.dcm
+```go
+// Encoding
+err := codec.Encode(writer, image, options)
 
-# Open a directory of DICOM slices
-goxel goxel -p /path/to/dicom/directory
+// Decoding (most codecs)
+img, err := codec.Decode(reader)
 ```
 
-### Merge DICOM Slices
+`rle` decoding requires raw data plus width/height (see its README).
+See individual package READMEs for detailed usage and options.
 
-Combine multiple DICOM slice files into a single multi-frame DICOM with optional compression:
+## DICOS Integration
 
-```bash
-# Merge with JPEG-LS compression (default)
-goxel merge -i /path/to/slices -o output.dcm
+These codecs are automatically used by `pkg/dicom` when decoding compressed pixel data. The appropriate codec is selected based on the Transfer Syntax UID in the DICOM file:
 
-# Merge without compression
-goxel merge -i /path/to/slices -o output.dcm -c=false
+```go
+import "github.com/jpfielding/goxel/pkg/dicom"
+
+// Automatically handles compressed frames
+ds, err := dicom.ReadFile(path)
+pixelData, err := ds.GetPixelData()
 ```
 
-### Decode DICOM Metadata
+## Pure Go
 
-```bash
-goxel decode -u /path/to/file.dcm
-```
-
-## Controls
-
-| Control | Action |
-|---------|--------|
-| Slice Slider | Navigate through image slices |
-| Window Level | Adjust brightness/contrast center |
-| Window Width | Adjust brightness/contrast range |
-| Z Scale | Adjust 3D volume aspect ratio |
-| Material Sliders | Adjust tissue threshold boundaries |
-| Opacity Slider | Control 3D rendering transparency |
-
-## Architecture
-
-```
-pkg/
-├── dicom/          # DICOM parser and writer
-│   ├── module/     # DICOM IOD modules (Patient, Study, Series, etc.)
-│   ├── tag/        # DICOM tag definitions
-│   └── transfer/   # Transfer syntax handling
-├── compress/       # Image compression codecs
-│   ├── jpegls/     # JPEG-LS lossless
-│   ├── jpegli/     # JPEG lossless
-│   ├── jpeg2k/     # JPEG 2000
-│   └── rle/        # Run-length encoding
-├── volume/         # 3D volume rendering
-└── goxel/          # Fyne UI application
-```
-
-## Credits
-
-Inspired by the [Fyne DICOM Viewer](https://apps.fyne.io/apps/com.fynelabs.dicomviewer.html).
-Aided heavily by Claude.ai, esp in the opengl work.  
-
-## License
-
-MIT
-# jpegs
-# jpegs
+All implementations are pure Go with no CGO dependencies, enabling:
+- Cross-compilation to any Go-supported platform
+- No external library dependencies
+- Consistent behavior across platforms
