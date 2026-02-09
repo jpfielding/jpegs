@@ -8,7 +8,6 @@ Pure Go implementation of JPEG-LS (ITU-T T.87 / ISO/IEC 14495-1) encoder and dec
 - **Context-based adaptive prediction** using LOCO-I algorithm
 - **Golomb-Rice entropy coding**
 - **8-bit and 16-bit** grayscale images
-- **DICOS/DICOM compatible**: Transfer Syntax `1.2.840.10008.1.2.4.80` (lossless) and `.81` (near-lossless)
 - **Pure Go**: No CGO dependencies
 
 ## Usage
@@ -16,7 +15,7 @@ Pure Go implementation of JPEG-LS (ITU-T T.87 / ISO/IEC 14495-1) encoder and dec
 ### Encoding
 
 ```go
-import "github.com/jpfielding/goxel/pkg/compress/jpegls"
+import "github.com/jpfielding/jpegs/pkg/compress/jpegls"
 
 // Lossless encoding (Near = 0)
 err := jpegls.Encode(writer, img, nil)
@@ -31,7 +30,7 @@ err := jpegls.Encode(writer, img, opts)
 ### Decoding
 
 ```go
-import "github.com/jpfielding/goxel/pkg/compress/jpegls"
+import "github.com/jpfielding/jpegs/pkg/compress/jpegls"
 
 img, err := jpegls.Decode(reader)
 ```
@@ -76,6 +75,3 @@ EOI   - End of Image (0xFFD9)
 ## References
 
 - ITU-T Rec. T.87 | ISO/IEC 14495-1 (JPEG-LS)
-- DICOM Transfer Syntaxes:
-  - `1.2.840.10008.1.2.4.80` (JPEG-LS Lossless)
-  - `1.2.840.10008.1.2.4.81` (JPEG-LS Near-Lossless)

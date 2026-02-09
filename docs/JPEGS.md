@@ -1,17 +1,15 @@
-# DICOM Loading Implementation Notes
+# JPEG Compression Variants
 
-## Transfer Syntaxes and Compression
+## Lossless JPEG Formats
 
-### JPEG Compression Variants in DICOM
+It's critical to understand the differences between the various JPEG lossless compression variants:
 
-DICOM files can use several JPEG compression variants. It's critical to understand the differences:
-
-| Transfer Syntax UID | Name | Marker | Go Package |
-|---------------------|------|--------|------------|
-| 1.2.840.10008.1.2.4.50 | JPEG Baseline | SOF0 (0xFFC0) | `image/jpeg` |
-| 1.2.840.10008.1.2.4.70 | JPEG Lossless (T.81) | SOF3 (0xFFC3) | `pkg/compress/jpegli` |
-| 1.2.840.10008.1.2.4.80 | JPEG-LS Lossless (T.87) | SOF55 (0xFFF7) | `pkg/compress/jpegls` |
-| 1.2.840.10008.1.2.4.90 | JPEG 2000 | Various | `pkg/compress/jpeg2k` |
+| Name | Marker | Go Package |
+|------|--------|------------|
+| JPEG Baseline | SOF0 (0xFFC0) | `image/jpeg` |
+| JPEG Lossless (T.81) | SOF3 (0xFFC3) | `pkg/compress/jpegli` |
+| JPEG-LS Lossless (T.87) | SOF55 (0xFFF7) | `pkg/compress/jpegls` |
+| JPEG 2000 | Various | `pkg/compress/jpeg2k` |
 
 **Key Insight**: JPEG Lossless (T.81) and JPEG-LS (T.87) are completely different formats despite similar names:
 - **JPEG Lossless (T.81)**: ITU-T T.81 / ISO 10918-1, uses predictive coding

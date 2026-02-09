@@ -1,15 +1,15 @@
 # Compression Codecs
 
-This package provides pure Go implementations of lossless image compression formats used in DICOS/DICOM imaging.
+This package provides pure Go implementations of lossless image compression formats.
 
 ## Supported Formats
 
-| Package | Format | DICOM Transfer Syntax | Description |
-|---------|--------|----------------------|-------------|
-| [jpeg2k](jpeg2k/) | JPEG 2000 | `1.2.840.10008.1.2.4.90` | Wavelet-based, excellent compression |
-| [jpegli](jpegli/) | JPEG Lossless | `1.2.840.10008.1.2.4.70` | Traditional DPCM-based |
-| [jpegls](jpegls/) | JPEG-LS | `1.2.840.10008.1.2.4.80/81` | LOCO-I algorithm, very efficient |
-| [rle](rle/) | RLE (PackBits) | `1.2.840.10008.1.2.5` | Run-length encoding |
+| Package | Format | Description |
+|---------|--------|-------------|
+| [jpeg2k](jpeg2k/) | JPEG 2000 | Wavelet-based, excellent compression |
+| [jpegli](jpegli/) | JPEG Lossless | Traditional DPCM-based |
+| [jpegls](jpegls/) | JPEG-LS | LOCO-I algorithm, very efficient |
+| [rle](rle/) | RLE (PackBits) | Run-length encoding |
 
 ## Feature Comparison
 
@@ -37,18 +37,6 @@ img, err := codec.Decode(reader)
 
 `rle` decoding requires raw data plus width/height (see its README).
 See individual package READMEs for detailed usage and options.
-
-## DICOS Integration
-
-These codecs are automatically used by `pkg/dicom` when decoding compressed pixel data. The appropriate codec is selected based on the Transfer Syntax UID in the DICOM file:
-
-```go
-import "github.com/jpfielding/goxel/pkg/dicom"
-
-// Automatically handles compressed frames
-ds, err := dicom.ReadFile(path)
-pixelData, err := ds.GetPixelData()
-```
 
 ## Pure Go
 

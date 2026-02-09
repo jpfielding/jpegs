@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 SCRIPTS_DIR := $(CURDIR)/scripts
 
-MODULE_NAME = goxel
+MODULE_NAME = jpegs
 REPO_PATH = $(shell git rev-parse --show-toplevel || pwd)
 REPO_NAME = $(shell basename $$REPO_PATH)
 GIT_SHA = $(shell git rev-parse --short HEAD)
