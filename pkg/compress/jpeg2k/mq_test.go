@@ -7,224 +7,124 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestMQEncoder_Simple(t *testing.T) {
-	enc := NewMQEncoder()
-	ctx := &MQState{Index: 0, MPS: 0}
-
-	// Encode a sequence of zeros (MPS)
-	for i := 0; i < 100; i++ {
-		enc.Encode(0, ctx)
-	}
-	enc.Flush()
-
-	// Should produce non-empty output
-	assert.True(t, len(enc.Bytes()) > 0)
+type ctxBit struct {
+	ctx int
+	bit uint8
 }
 
-func TestMQEncoder_AllOnes(t *testing.T) {
-	enc := NewMQEncoder()
-	ctx := &MQState{Index: 0, MPS: 0}
-
-	// Encode a sequence of ones (LPS initially)
-	for i := 0; i < 100; i++ {
-		enc.Encode(1, ctx)
+func mqRoundTrip(t *testing.T, seq []ctxBit) {
+	t.Helper()
+	ce := defaultContexts()
+	enc := newMQEncoder()
+	for _, s := range seq {
+		enc.encode(s.bit, &ce[s.ctx])
 	}
-	enc.Flush()
-
-	assert.True(t, len(enc.Bytes()) > 0)
+	enc.flush()
+	cd := defaultContexts()
+	dec := newMQDecoder(enc.bytes())
+	for i, s := range seq {
+		require.Equal(t, s.bit, dec.decode(&cd[s.ctx]), "symbol %d", i)
+	}
 }
 
-func TestMQEncoder_Alternating(t *testing.T) {
-	enc := NewMQEncoder()
-	ctx := &MQState{Index: 0, MPS: 0}
-
-	// Encode alternating bits
-	for i := 0; i < 100; i++ {
-		enc.Encode(i % 2, ctx)
-	}
-	enc.Flush()
-
-	assert.True(t, len(enc.Bytes()) > 0)
-}
-
-func TestMQRoundTrip(t *testing.T) {
-	// The MQ coder works best with predictable sequences.
-	// Complex patterns require exact byte-level compatibility between encoder/decoder.
-	tests := []struct {
+func TestMQRoundTripSingleContext(t *testing.T) {
+	for _, tc := range []struct {
 		name string
-		bits []int
+		bit  func(i int) uint8
+		n    int
 	}{
-		{
-			name: "all zeros",
-			bits: make100Bits(0),
-		},
-		{
-			name: "all ones",
-			bits: make100Bits(1),
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Encode
-			enc := NewMQEncoder()
-			encCtx := &MQState{Index: 0, MPS: 0}
-
-			for _, bit := range tt.bits {
-				enc.Encode(bit, encCtx)
+		{"zeros", func(int) uint8 { return 0 }, 100},
+		{"ones", func(int) uint8 { return 1 }, 100},
+		{"alternating", func(i int) uint8 { return uint8(i % 2) }, 200},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			seq := make([]ctxBit, tc.n)
+			for i := range seq {
+				seq[i] = ctxBit{0, tc.bit(i)}
 			}
-			enc.Flush()
-
-			encoded := enc.Bytes()
-			require.True(t, len(encoded) > 0, "encoded data should not be empty")
-
-			// Decode
-			dec := NewMQDecoder(encoded)
-			decCtx := &MQState{Index: 0, MPS: 0}
-
-			decoded := make([]int, len(tt.bits))
-			for i := range decoded {
-				decoded[i] = dec.Decode(decCtx)
-			}
-
-			assert.Equal(t, tt.bits, decoded)
+			mqRoundTrip(t, seq)
 		})
 	}
 }
 
-func TestMQEncoder_Reset(t *testing.T) {
-	enc := NewMQEncoder()
-	ctx := &MQState{Index: 0, MPS: 0}
-
-	// First encoding
-	enc.Encode(1, ctx)
-	enc.Encode(0, ctx)
-	enc.Flush()
-	first := make([]byte, len(enc.Bytes()))
-	copy(first, enc.Bytes())
-
-	// Reset and encode same sequence
-	enc.Reset()
-	ctx.Index = 0
-	ctx.MPS = 0
-	enc.Encode(1, ctx)
-	enc.Encode(0, ctx)
-	enc.Flush()
-
-	assert.Equal(t, first, enc.Bytes())
+func TestMQRoundTripMultipleContexts(t *testing.T) {
+	mqRoundTrip(t, []ctxBit{{0, 1}, {1, 0}, {0, 1}, {2, 1}, {1, 0}, {0, 0}, {2, 1}, {0, 1}, {1, 1}, {2, 0}})
 }
 
-func TestMQState_ContextEvolution(t *testing.T) {
-	// Test that context evolves as expected
-	ctx := &MQState{Index: 0, MPS: 0}
-
-	// Initial state
-	assert.Equal(t, 0, ctx.Index)
-	assert.Equal(t, 0, ctx.MPS)
-
-	enc := NewMQEncoder()
-
-	// Encode MPS several times - should increase index
-	for i := 0; i < 10; i++ {
-		enc.Encode(ctx.MPS, ctx)
+func TestMQRoundTripRandom(t *testing.T) {
+	rng := uint32(12345)
+	seq := make([]ctxBit, 500)
+	for i := range seq {
+		rng = rng*1103515245 + 12345
+		seq[i] = ctxBit{0, uint8(rng >> 16 & 1)}
 	}
-
-	// Index should have increased (moved toward more skewed probability)
-	assert.Greater(t, ctx.Index, 0)
+	mqRoundTrip(t, seq)
 }
 
-func TestSetupDefaultContexts(t *testing.T) {
-	contexts := SetupDefaultContexts()
-
-	assert.Equal(t, NumMQContexts, len(contexts))
-
-	// Check uniform context
-	assert.Equal(t, 46, contexts[CtxUniform].Index)
-	assert.Equal(t, 0, contexts[CtxUniform].MPS)
-
-	// Check other contexts start at 0
-	assert.Equal(t, 0, contexts[0].Index)
-	assert.Equal(t, 0, contexts[CtxSignStart].Index)
-}
-
-func TestResetContexts(t *testing.T) {
-	contexts := ResetContexts(10)
-
-	assert.Equal(t, 10, len(contexts))
-	for i, ctx := range contexts {
-		assert.Equal(t, 0, ctx.Index, "context %d", i)
-		assert.Equal(t, 0, ctx.MPS, "context %d", i)
-	}
-}
-
-func TestMQTable(t *testing.T) {
-	// Verify table has expected properties
-	assert.Equal(t, 47, len(mqTable))
-
-	// State 46 should be uniform (Qe = 0x5601, stays at 46)
-	assert.Equal(t, uint16(0x5601), mqTable[46].qe)
-	assert.Equal(t, 46, mqTable[46].nmps)
-	assert.Equal(t, 46, mqTable[46].nlps)
-
-	// State 0 should switch on LPS
-	assert.Equal(t, 1, mqTable[0].swi)
-}
-
-// Helper functions for generating test data
-func make100Bits(val int) []int {
-	bits := make([]int, 100)
-	for i := range bits {
-		bits[i] = val
-	}
-	return bits
-}
-
-func makeAlternatingBits(n int) []int {
-	bits := make([]int, n)
-	for i := range bits {
-		bits[i] = i % 2
-	}
-	return bits
-}
-
-func BenchmarkMQEncode(b *testing.B) {
-	bits := make([]int, 10000)
-	for i := range bits {
-		bits[i] = (i * 17) % 2
-	}
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		enc := NewMQEncoder()
-		ctx := &MQState{Index: 0, MPS: 0}
-		for _, bit := range bits {
-			enc.Encode(bit, ctx)
+func TestMQInitialContextStates(t *testing.T) {
+	ctx := defaultContexts()
+	for i, s := range ctx {
+		want := uint8(0)
+		switch i {
+		case ctxZCStart:
+			want = 4
+		case ctxRunLength:
+			want = 3
+		case ctxUniform:
+			want = 46
 		}
-		enc.Flush()
+		assert.Equal(t, want, s.index, "context %d", i)
+		assert.Equal(t, uint8(0), s.mps, "context %d", i)
 	}
 }
 
-func BenchmarkMQDecode(b *testing.B) {
-	// Prepare encoded data
-	bits := make([]int, 10000)
-	for i := range bits {
-		bits[i] = (i * 17) % 2
-	}
-
-	enc := NewMQEncoder()
-	ctx := &MQState{Index: 0, MPS: 0}
-	for _, bit := range bits {
-		enc.Encode(bit, ctx)
-	}
-	enc.Flush()
-	encoded := enc.Bytes()
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		dec := NewMQDecoder(encoded)
-		decCtx := &MQState{Index: 0, MPS: 0}
-		for range bits {
-			dec.Decode(decCtx)
+func TestMQRoundTripAllContexts(t *testing.T) {
+	var zeros, ones, alt []ctxBit
+	for c := range numMQContexts {
+		for range 500 {
+			zeros = append(zeros, ctxBit{c, 0})
+			ones = append(ones, ctxBit{c, 1})
 		}
+	}
+	for i := range 10_000 {
+		alt = append(alt, ctxBit{i % numMQContexts, uint8(i % 2)})
+	}
+	rng := uint64(0x2545F4914F6CDD1D)
+	random := make([]ctxBit, 10_000)
+	for i := range random {
+		rng = rng*6364136223846793005 + 1
+		random[i] = ctxBit{int(rng>>40) % numMQContexts, uint8(rng >> 33 & 1)}
+	}
+	for name, seq := range map[string][]ctxBit{"zeros": zeros, "ones": ones, "alternating": alt, "random": random} {
+		t.Run(name, func(t *testing.T) { mqRoundTrip(t, seq) })
+	}
+}
+
+// Truncated and empty codewords must decode without panicking or reading
+// out of bounds, however many symbols are pulled.
+func TestMQDecodeTruncatedNoPanic(t *testing.T) {
+	ce := defaultContexts()
+	enc := newMQEncoder()
+	rng := uint32(0x12345678)
+	for range 2_000 {
+		rng = rng*1103515245 + 12345
+		enc.encode(uint8(rng>>16&1), &ce[int(rng>>20)%numMQContexts])
+	}
+	enc.flush()
+	data := enc.bytes()
+	for cut := 0; cut <= len(data); cut++ {
+		cd := defaultContexts()
+		dec := newMQDecoder(data[:cut])
+		for i := range 3_000 {
+			dec.decode(&cd[i%numMQContexts])
+		}
+	}
+}
+
+func TestMQDecodeEmptyNoPanic(t *testing.T) {
+	cd := defaultContexts()
+	dec := newMQDecoder(nil)
+	for i := range 1_000 {
+		dec.decode(&cd[i%numMQContexts])
 	}
 }
