@@ -34,7 +34,7 @@ type codeBlockGeom struct {
 
 // band is one DWT sub-band of a resolution level.
 type band struct {
-	kind     Subband
+	kind     bandKind
 	rect     rect // band-native, anchored at (0,0)
 	gainLog2 int  // 0 LL, 1 HL/LH, 2 HH (T.800 E.1)
 	// xOff, yOff locate the band inside the packed (Mallat) tile buffer.
@@ -89,13 +89,13 @@ func subbandRect(tileW, tileH, nb, xob, yob int) rect {
 	return rect{x0: c(-offX), y0: c(-offY), x1: c(int64(tileW) - offX), y1: c(int64(tileH) - offY)}
 }
 
-func bandOffsets(kind Subband) (xob, yob, gain int) {
+func bandOffsets(kind bandKind) (xob, yob, gain int) {
 	switch kind {
-	case SubbandHL:
+	case bandHL:
 		return 1, 0, 1
-	case SubbandLH:
+	case bandLH:
 		return 0, 1, 1
-	case SubbandHH:
+	case bandHH:
 		return 1, 1, 2
 	default:
 		return 0, 0, 0
@@ -126,7 +126,7 @@ func codeBlocks(b rect, xcb, ycb, ppx, ppy, precinctsW int) ([]codeBlockGeom, in
 	return cbs, gw, gh
 }
 
-func newBand(kind Subband, tileW, tileH, nb, xOff, yOff, xcb, ycb, ppx, ppy, precinctsW int) band {
+func newBand(kind bandKind, tileW, tileH, nb, xOff, yOff, xcb, ycb, ppx, ppy, precinctsW int) band {
 	xob, yob, gain := bandOffsets(kind)
 	r := subbandRect(tileW, tileH, nb, xob, yob)
 	cbs, gw, gh := codeBlocks(r, xcb, ycb, ppx, ppy, precinctsW)
@@ -155,17 +155,41 @@ func buildGeometry(tileW, tileH, levels, xcb, ycb int) []resolution {
 
 		var bands []band
 		if r == 0 {
-			bands = []band{newBand(SubbandLL, tileW, tileH, levels, 0, 0, xe, ye, pp, pp, pw)}
+			bands = []band{newBand(bandLL, tileW, tileH, levels, 0, 0, xe, ye, pp, pp, pw)}
 		} else {
 			n := levels - r + 1
 			llW, llH := ceilShift(tileW, n), ceilShift(tileH, n)
 			bands = []band{
-				newBand(SubbandHL, tileW, tileH, n, llW, 0, xe, ye, pp, pp, pw),
-				newBand(SubbandLH, tileW, tileH, n, 0, llH, xe, ye, pp, pp, pw),
-				newBand(SubbandHH, tileW, tileH, n, llW, llH, xe, ye, pp, pp, pw),
+				newBand(bandHL, tileW, tileH, n, llW, 0, xe, ye, pp, pp, pw),
+				newBand(bandLH, tileW, tileH, n, 0, llH, xe, ye, pp, pp, pw),
+				newBand(bandHH, tileW, tileH, n, llW, llH, xe, ye, pp, pp, pw),
 			}
 		}
 		res = append(res, resolution{r: r, rect: rect{0, 0, rw, rh}, bands: bands, precinctsW: pw, precinctsH: ph})
 	}
 	return res
+}
+
+// bandKind is a DWT sub-band orientation.
+type bandKind uint8
+
+const (
+	bandLL bandKind = iota // low-low (approximation)
+	bandHL                 // horizontal detail
+	bandLH                 // vertical detail
+	bandHH                 // diagonal detail
+)
+
+func (k bandKind) String() string {
+	switch k {
+	case bandLL:
+		return "LL"
+	case bandHL:
+		return "HL"
+	case bandLH:
+		return "LH"
+	case bandHH:
+		return "HH"
+	}
+	return "band?"
 }

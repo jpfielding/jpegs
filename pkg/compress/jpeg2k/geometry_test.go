@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func findBand(t *testing.T, r resolution, kind Subband) band {
+func findBand(t *testing.T, r resolution, kind bandKind) band {
 	t.Helper()
 	for _, b := range r.bands {
 		if b.kind == kind {
@@ -26,13 +26,13 @@ func TestGeometryRes64x64Levels5(t *testing.T) {
 	for r, e := range []int{2, 4, 8, 16, 32, 64} {
 		assert.Equal(t, [2]int{e, e}, dims(g[r].rect), "res %d", r)
 	}
-	assert.Equal(t, [2]int{2, 2}, dims(findBand(t, g[0], SubbandLL).rect))
+	assert.Equal(t, [2]int{2, 2}, dims(findBand(t, g[0], bandLL).rect))
 	for r := 1; r <= 5; r++ {
 		prev := ceilShift(64, 5-r+1)
 		detail := ceilShift(64, 5-r) - prev
-		assert.Equal(t, [2]int{detail, prev}, dims(findBand(t, g[r], SubbandHL).rect), "HL r%d", r)
-		assert.Equal(t, [2]int{prev, detail}, dims(findBand(t, g[r], SubbandLH).rect), "LH r%d", r)
-		assert.Equal(t, [2]int{detail, detail}, dims(findBand(t, g[r], SubbandHH).rect), "HH r%d", r)
+		assert.Equal(t, [2]int{detail, prev}, dims(findBand(t, g[r], bandHL).rect), "HL r%d", r)
+		assert.Equal(t, [2]int{prev, detail}, dims(findBand(t, g[r], bandLH).rect), "LH r%d", r)
+		assert.Equal(t, [2]int{detail, detail}, dims(findBand(t, g[r], bandHH).rect), "HH r%d", r)
 	}
 }
 
@@ -48,7 +48,7 @@ func TestGeometrySingleCodeBlockUntilExceeded(t *testing.T) {
 		}
 	}
 	g := buildGeometry(200, 64, 1, 6, 6)
-	hl := findBand(t, g[1], SubbandHL)
+	hl := findBand(t, g[1], bandHL)
 	assert.Equal(t, 100, hl.rect.width())
 	assert.Equal(t, 2, hl.gridW)
 	assert.Equal(t, 64, hl.cbs[0].rect.width())
@@ -61,13 +61,13 @@ func TestGeometryBands13x7Levels2(t *testing.T) {
 	assert.Equal(t, [2]int{4, 2}, dims(g[0].rect))
 	assert.Equal(t, [2]int{7, 4}, dims(g[1].rect))
 	assert.Equal(t, [2]int{13, 7}, dims(g[2].rect))
-	assert.Equal(t, [2]int{4, 2}, dims(findBand(t, g[0], SubbandLL).rect))
+	assert.Equal(t, [2]int{4, 2}, dims(findBand(t, g[0], bandLL).rect))
 
-	assert.Equal(t, [2]int{3, 2}, dims(findBand(t, g[1], SubbandHL).rect))
-	assert.Equal(t, [2]int{4, 2}, dims(findBand(t, g[1], SubbandLH).rect))
-	assert.Equal(t, [2]int{3, 2}, dims(findBand(t, g[1], SubbandHH).rect))
+	assert.Equal(t, [2]int{3, 2}, dims(findBand(t, g[1], bandHL).rect))
+	assert.Equal(t, [2]int{4, 2}, dims(findBand(t, g[1], bandLH).rect))
+	assert.Equal(t, [2]int{3, 2}, dims(findBand(t, g[1], bandHH).rect))
 
-	hl, lh, hh := findBand(t, g[2], SubbandHL), findBand(t, g[2], SubbandLH), findBand(t, g[2], SubbandHH)
+	hl, lh, hh := findBand(t, g[2], bandHL), findBand(t, g[2], bandLH), findBand(t, g[2], bandHH)
 	assert.Equal(t, [2]int{6, 4}, dims(hl.rect))
 	assert.Equal(t, [2]int{7, 3}, dims(lh.rect))
 	assert.Equal(t, [2]int{6, 3}, dims(hh.rect))
@@ -114,17 +114,17 @@ func TestGeometryInvariants(t *testing.T) {
 
 func TestGeometryDegenerate(t *testing.T) {
 	g := buildGeometry(1, 16, 4, 6, 6)
-	assert.True(t, findBand(t, g[1], SubbandHL).rect.empty())
-	assert.True(t, findBand(t, g[1], SubbandHH).rect.empty())
+	assert.True(t, findBand(t, g[1], bandHL).rect.empty())
+	assert.True(t, findBand(t, g[1], bandHH).rect.empty())
 	checkGeometryInvariants(t, 1, 16, 4, 6, 6)
 
 	g = buildGeometry(16, 1, 4, 6, 6)
-	assert.True(t, findBand(t, g[1], SubbandLH).rect.empty())
-	assert.True(t, findBand(t, g[1], SubbandHH).rect.empty())
+	assert.True(t, findBand(t, g[1], bandLH).rect.empty())
+	assert.True(t, findBand(t, g[1], bandHH).rect.empty())
 	checkGeometryInvariants(t, 16, 1, 4, 6, 6)
 
 	g = buildGeometry(1, 1, 3, 6, 6)
-	assert.Equal(t, [2]int{1, 1}, dims(findBand(t, g[0], SubbandLL).rect))
+	assert.Equal(t, [2]int{1, 1}, dims(findBand(t, g[0], bandLL).rect))
 	for _, res := range g[1:] {
 		for _, b := range res.bands {
 			assert.True(t, b.rect.empty(), "%v r%d", b.kind, res.r)
@@ -134,13 +134,13 @@ func TestGeometryDegenerate(t *testing.T) {
 
 	g = buildGeometry(37, 29, 0, 6, 6)
 	require.Len(t, g, 1)
-	assert.Equal(t, [2]int{37, 29}, dims(findBand(t, g[0], SubbandLL).rect))
+	assert.Equal(t, [2]int{37, 29}, dims(findBand(t, g[0], bandLL).rect))
 	checkGeometryInvariants(t, 37, 29, 0, 6, 6)
 }
 
 func TestGeometryCodeBlockExtremes(t *testing.T) {
 	checkGeometryInvariants(t, 64, 64, 3, 2, 2)
-	hl := findBand(t, buildGeometry(64, 64, 1, 2, 2)[1], SubbandHL)
+	hl := findBand(t, buildGeometry(64, 64, 1, 2, 2)[1], bandHL)
 	assert.Equal(t, 8, hl.gridW)
 	assert.Equal(t, 8, hl.gridH)
 	assert.Len(t, hl.cbs, 64)
