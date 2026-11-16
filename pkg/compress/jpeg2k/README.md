@@ -23,6 +23,19 @@ byte must belong to a packet.
 `Encode` accepts only `*image.Gray16`; other image types return
 `ErrUnsupported`.
 
+Verification (OpenJPEG 2.5.4, dicos.rs 2.1.0 at `1ebf683`):
+
+- **dicos.rs** - over 13,200 configurations (11 widths × 8 heights from 1 to
+  257, 0-8 levels, five code-block shapes, six patterns) the Go encoder's
+  output is byte-identical to the Rust encoder's, and each decoder reads the
+  other's streams exactly. The MQ/tier-1 coder reproduces dicos.rs's
+  OpenJPEG code-block vector and 8x8 golden byte for byte.
+- **OpenJPEG** - `opj_decompress` reads all 13,200 Go streams to the exact
+  source pixels, and Go decodes 1,512 `opj_compress` streams (default and
+  `-n`/`-b` variants over the same images) exactly. `testdata/interop`
+  holds four OpenJPEG streams; `JPEG2K_INTEROP=1 go test` re-runs the
+  `opj_decompress` direction when the tool is on `PATH`.
+
 ## Usage
 
 ```go
@@ -54,7 +67,9 @@ all-zero QCD exponents and a payload of exactly the legacy size, checked
 before any packet is decoded. They decode to `*image.Gray`,
 `*image.Gray16` or `*image.RGBA` as written. `StandardOnly` rejects them,
 `LegacyOnly` accepts nothing else. `testdata/legacy` pins both producers'
-output.
+output (`go-*.j2c` from jpegs v0.2.0, `rs-*.j2c` from dicos.rs 1.0.0).
+Note that dicos.rs 2.x itself reads only the `rs-*` files: it rejects Go's
+`Psot` and its 8-bit and RGB files.
 
 ## Limits
 
