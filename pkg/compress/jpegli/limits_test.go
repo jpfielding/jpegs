@@ -18,7 +18,7 @@ func sofOffset(t *testing.T, data []byte) int {
 	return i
 }
 
-func encodedGray16(t *testing.T) []byte {
+func encodedGray16(t testing.TB) []byte {
 	t.Helper()
 	img := image.NewGray16(image.Rect(0, 0, 16, 16))
 	var buf bytes.Buffer
