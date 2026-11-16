@@ -1,0 +1,101 @@
+// legacygen writes legacy-format fixtures with the jpegli encoder as of
+// jpegs v0.2.0 (before the SSSS=16 / predictor 5,6 fixes). Each fixture is
+// <name>.jpg plus its source <name>.pgm, and is verified to round-trip
+// through the v0.2.0 decoder.
+package main
+
+import (
+	"bytes"
+	"fmt"
+	"image"
+	"image/color"
+	"math/rand"
+	"os"
+	"path/filepath"
+
+	"github.com/jpfielding/jpegs/pkg/compress/jpegli"
+)
+
+func main() {
+	out := os.Args[1]
+	rng := rand.New(rand.NewSource(356))
+	type fx struct {
+		name string
+		img  image.Image
+		pred int
+	}
+	// 16-bit image whose horizontal steps are often exactly 32768 (SSSS=16)
+	// mixed with noise and negative odd vertical gradients.
+	ssss16 := func(w, h int) *image.Gray16 {
+		m := image.NewGray16(image.Rect(0, 0, w, h))
+		for y := 0; y < h; y++ {
+			for x := 0; x < w; x++ {
+				v := uint16(rng.Intn(64)) + uint16(3*y)
+				if (x/2+y)%2 == 1 {
+					v += 32768
+				}
+				m.SetGray16(x, y, colorG16(v))
+			}
+		}
+		return m
+	}
+	rand16 := image.NewGray16(image.Rect(0, 0, 13, 7))
+	for i := 0; i < 13*7; i++ {
+		rand16.SetGray16(i%13, i/13, colorG16(uint16(rng.Intn(65536))))
+	}
+	grad8 := image.NewGray(image.Rect(0, 0, 16, 16))
+	for i := range grad8.Pix {
+		grad8.Pix[i] = byte(i*7 + i/16*3)
+	}
+	fxs := []fx{
+		{"ssss16-p1-16x8", ssss16(16, 8), 1},
+		{"ssss16-p5-16x8", ssss16(16, 8), 5},
+		{"ssss16-p6-16x8", ssss16(16, 8), 6},
+		{"ssss16-p7-16x8", ssss16(16, 8), 7},
+		{"random16-p1-13x7", rand16, 1},
+		{"gradient8-p1-16x16", grad8, 1},
+	}
+	for _, f := range fxs {
+		var buf bytes.Buffer
+		if err := jpegli.Encode(&buf, f.img, &jpegli.Options{Predictor: f.pred}); err != nil {
+			panic(err)
+		}
+		back, err := jpegli.Decode(bytes.NewReader(buf.Bytes()))
+		if err != nil {
+			panic(err)
+		}
+		if !bytes.Equal(pix(back), pix(f.img)) {
+			panic(f.name + ": v0.2.0 round trip mismatch")
+		}
+		must(os.WriteFile(filepath.Join(out, f.name+".jpg"), buf.Bytes(), 0o644))
+		must(os.WriteFile(filepath.Join(out, f.name+".pgm"), pgm(f.img), 0o644))
+		fmt.Println(f.name, buf.Len())
+	}
+}
+
+func colorG16(v uint16) color.Gray16 { return color.Gray16{Y: v} }
+
+func pix(img image.Image) []byte {
+	switch m := img.(type) {
+	case *image.Gray:
+		return m.Pix
+	case *image.Gray16:
+		return m.Pix
+	}
+	return nil
+}
+
+func pgm(img image.Image) []byte {
+	b := img.Bounds()
+	maxv := 255
+	if _, ok := img.(*image.Gray16); ok {
+		maxv = 65535
+	}
+	return append([]byte(fmt.Sprintf("P5\n%d %d\n%d\n", b.Dx(), b.Dy(), maxv)), pix(img)...)
+}
+
+func must(err error) {
+	if err != nil {
+		panic(err)
+	}
+}
