@@ -24,7 +24,7 @@ type codedBlock struct {
 }
 
 // encodeCodeBlock codes w*h row-major signed subband samples.
-func encodeCodeBlock(coeffs []int32, w, h int, band Subband) codedBlock {
+func encodeCodeBlock(coeffs []int32, w, h int, band bandKind) codedBlock {
 	var maxMag uint32
 	for _, v := range coeffs {
 		maxMag = max(maxMag, absU32(v))
@@ -61,7 +61,7 @@ func encodeCodeBlock(coeffs []int32, w, h int, band Subband) codedBlock {
 // decodeCodeBlock reconstructs w*h signed samples from a codeword. Any pass
 // prefix 1..3*nb-2 is honoured; malformed data never reads out of bounds
 // (the MQ decoder feeds 1-bits past the end).
-func decodeCodeBlock(data []byte, w, h int, band Subband, bitplanes, passes int) ([]int32, error) {
+func decodeCodeBlock(data []byte, w, h int, band bandKind, bitplanes, passes int) ([]int32, error) {
 	if bitplanes == 0 {
 		if passes != 0 {
 			return nil, fmt.Errorf("%w: code-block has 0 bit-planes but %d passes", ErrInvalidData, passes)
@@ -132,10 +132,10 @@ type tier1 struct {
 	stride int
 	mag    []uint32 // source magnitudes on encode, reconstruction on decode
 	w, h   int
-	band   Subband
+	band   bandKind
 }
 
-func newTier1(w, h int, band Subband, dec *mqDecoder) *tier1 {
+func newTier1(w, h int, band bandKind, dec *mqDecoder) *tier1 {
 	t := &tier1{
 		dec:      dec,
 		contexts: defaultContexts(),
@@ -228,9 +228,9 @@ func zcHH(h, v, d int) int {
 func (t *tier1) zcContext(i int) int {
 	h, v, d := t.neighbors(i)
 	switch t.band {
-	case SubbandHL:
+	case bandHL:
 		return zcLL(v, h, d)
-	case SubbandHH:
+	case bandHH:
 		return zcHH(h, v, d)
 	default: // LL, LH
 		return zcLL(h, v, d)

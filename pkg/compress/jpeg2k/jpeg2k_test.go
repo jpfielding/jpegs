@@ -2,6 +2,7 @@ package jpeg2k
 
 import (
 	"bytes"
+	"encoding/binary"
 	"image"
 	"image/color"
 	"testing"
@@ -10,356 +11,223 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestEncode_Gray8_SmallImage(t *testing.T) {
-	// Create a small grayscale image
-	img := image.NewGray(image.Rect(0, 0, 16, 16))
-	for y := 0; y < 16; y++ {
-		for x := 0; x < 16; x++ {
-			img.SetGray(x, y, color.Gray{Y: uint8((x + y) * 8)})
+func patternPixels(kind, w, h int) []uint16 {
+	n := w * h
+	v := make([]uint16, n)
+	switch kind {
+	case 0:
+		for i := range v {
+			v[i] = 40000
 		}
-	}
-
-	var buf bytes.Buffer
-	err := Encode(&buf, img, nil)
-	require.NoError(t, err)
-	assert.True(t, buf.Len() > 0, "encoded data should not be empty")
-
-	// Verify SOC marker at start
-	data := buf.Bytes()
-	assert.Equal(t, byte(0xFF), data[0])
-	assert.Equal(t, byte(0x4F), data[1])
-}
-
-func TestEncode_Gray16_SmallImage(t *testing.T) {
-	img := image.NewGray16(image.Rect(0, 0, 16, 16))
-	for y := 0; y < 16; y++ {
-		for x := 0; x < 16; x++ {
-			img.SetGray16(x, y, color.Gray16{Y: uint16((x + y) * 2048)})
+	case 1:
+		for i := range v {
+			v[i] = uint16(((i%w)*250 + (i/w)*70) % 65536)
 		}
-	}
-
-	var buf bytes.Buffer
-	err := Encode(&buf, img, nil)
-	require.NoError(t, err)
-	assert.True(t, buf.Len() > 0)
-}
-
-func TestEncode_RGBA_SmallImage(t *testing.T) {
-	img := image.NewRGBA(image.Rect(0, 0, 16, 16))
-	for y := 0; y < 16; y++ {
-		for x := 0; x < 16; x++ {
-			img.SetRGBA(x, y, color.RGBA{R: uint8(x * 16), G: uint8(y * 16), B: 128, A: 255})
+	case 2:
+		s := uint64(0x9E3779B97F4A7C15) ^ uint64(w)<<20 ^ uint64(h)
+		for i := range v {
+			s = s*6364136223846793005 + 1
+			v[i] = uint16(s >> 40)
 		}
+	default:
+		v[0], v[n/2], v[n-1] = 65535, 32768, 1
 	}
-
-	var buf bytes.Buffer
-	err := Encode(&buf, img, nil)
-	require.NoError(t, err)
-	assert.True(t, buf.Len() > 0)
+	return v
 }
 
-func TestEncode_InvalidDimensions(t *testing.T) {
-	img := image.NewGray(image.Rect(0, 0, 0, 0))
-	var buf bytes.Buffer
-	err := Encode(&buf, img, nil)
-	require.Error(t, err)
-}
-
-func TestEncode_WithOptions(t *testing.T) {
-	img := image.NewGray(image.Rect(0, 0, 32, 32))
-	for y := 0; y < 32; y++ {
-		for x := 0; x < 32; x++ {
-			img.SetGray(x, y, color.Gray{Y: uint8(x ^ y)})
-		}
+func TestRoundTripMatrix(t *testing.T) {
+	dims := []int{1, 2, 5, 13, 64, 130, 200}
+	if testing.Short() {
+		dims = []int{1, 5, 64}
 	}
-
-	opts := &Options{
-		DecompLevels: 3,
-		NumLayers:    1,
-		Progression:  ProgressionLRCP,
-	}
-
-	var buf bytes.Buffer
-	err := Encode(&buf, img, opts)
-	require.NoError(t, err)
-	assert.True(t, buf.Len() > 0)
-}
-
-func TestDecode_InvalidData(t *testing.T) {
-	// Empty data
-	_, err := Decode(bytes.NewReader([]byte{}))
-	require.Error(t, err)
-
-	// Too short
-	_, err = Decode(bytes.NewReader([]byte{0xFF}))
-	require.Error(t, err)
-
-	// Wrong magic
-	_, err = Decode(bytes.NewReader([]byte{0x00, 0x00, 0x00, 0x00}))
-	require.Error(t, err)
-}
-
-func TestDecodeConfig_InvalidData(t *testing.T) {
-	_, err := DecodeConfig(bytes.NewReader([]byte{}))
-	require.Error(t, err)
-
-	_, err = DecodeConfig(bytes.NewReader([]byte{0xFF, 0x4F})) // Just SOC, no SIZ
-	require.Error(t, err)
-}
-
-func TestRoundTrip_Gray8(t *testing.T) {
-	// Create a gradient image
-	width, height := 32, 32
-	original := image.NewGray(image.Rect(0, 0, width, height))
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
-			original.SetGray(x, y, color.Gray{Y: uint8((x + y) % 256)})
-		}
-	}
-
-	// Encode
-	var buf bytes.Buffer
-	err := Encode(&buf, original, nil)
-	require.NoError(t, err)
-
-	// Decode
-	decoded, err := Decode(bytes.NewReader(buf.Bytes()))
-	require.NoError(t, err)
-
-	// Verify dimensions
-	bounds := decoded.Bounds()
-	assert.Equal(t, width, bounds.Dx())
-	assert.Equal(t, height, bounds.Dy())
-
-	// Verify pixel values (lossless should be exact)
-	gray, ok := decoded.(*image.Gray)
-	require.True(t, ok, "decoded image should be Gray")
-
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
-			expected := original.GrayAt(x, y).Y
-			actual := gray.GrayAt(x, y).Y
-			assert.Equal(t, expected, actual, "pixel mismatch at (%d, %d)", x, y)
+	for _, w := range dims {
+		for _, h := range dims {
+			for _, nl := range []int{0, 1, 5} {
+				for _, cb := range [][2]int{{2, 2}, {6, 6}} {
+					for kind := range 4 {
+						px := patternPixels(kind, w, h)
+						opts := &Options{DecompLevels: nl, CodeBlockWidthExp: cb[0], CodeBlockHeightExp: cb[1]}
+						data := encodeBytes(t, gray16From(w, h, px), opts)
+						for _, p := range []LegacyPolicy{LegacyAuto, StandardOnly} {
+							img, err := DecodeWithPolicy(bytes.NewReader(data), p)
+							require.NoError(t, err, "%dx%d %+v k%d", w, h, opts, kind)
+							require.Equal(t, px, gray16Pixels(img.(*image.Gray16)), "%dx%d %+v k%d", w, h, opts, kind)
+						}
+					}
+				}
+			}
 		}
 	}
 }
 
-func TestRoundTrip_Gray16(t *testing.T) {
-	width, height := 32, 32
-	original := image.NewGray16(image.Rect(0, 0, width, height))
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
-			original.SetGray16(x, y, color.Gray16{Y: uint16((x + y) * 1024)})
-		}
-	}
-
-	var buf bytes.Buffer
-	err := Encode(&buf, original, nil)
+func TestEncodeSubImage(t *testing.T) {
+	full := gray16From(8, 8, patternPixels(2, 8, 8))
+	sub := full.SubImage(image.Rect(3, 2, 8, 7)).(*image.Gray16)
+	img, err := decodeBytes(encodeBytes(t, sub, nil))
 	require.NoError(t, err)
+	assert.Equal(t, image.Rect(0, 0, 5, 5), img.Bounds())
+	assert.Equal(t, gray16Pixels(sub), gray16Pixels(img.(*image.Gray16)))
+}
 
-	decoded, err := Decode(bytes.NewReader(buf.Bytes()))
+func TestCodestreamFraming(t *testing.T) {
+	data := encodeBytes(t, gray16From(8, 8, patternPixels(0, 8, 8)), nil)
+	assert.Equal(t, []byte{0xFF, 0x4F}, data[:2])
+	assert.Equal(t, []byte{0xFF, 0xD9}, data[len(data)-2:])
+	assert.True(t, bytes.Contains(data, []byte{0xFF, 0x93}), "conformant SOD")
+	assert.False(t, bytes.Contains(data, []byte{0xFF, 0xD3}), "no legacy SOD")
+
+	sot := bytes.Index(data, []byte{0xFF, 0x90})
+	psot := binary.BigEndian.Uint32(data[sot+6:])
+	assert.Equal(t, len(data)-2, sot+int(psot), "Psot reaches EOC")
+}
+
+// εb = 16/17/17/18 for LL/HL/LH/HH; SPqcd bytes are εb << 3, guard bits 2.
+func TestQCDExponents(t *testing.T) {
+	data := encodeBytes(t, gray16From(4, 4, patternPixels(0, 4, 4)), &Options{DecompLevels: 1, CodeBlockWidthExp: 6, CodeBlockHeightExp: 6})
+	q := bytes.Index(data, []byte{0xFF, 0x5C})
+	assert.Equal(t, []byte{0x00, 0x07, 0x40, 16 << 3, 17 << 3, 17 << 3, 18 << 3}, data[q+2:q+9])
+}
+
+func TestDecodeConfig(t *testing.T) {
+	data := encodeBytes(t, gray16From(20, 12, patternPixels(1, 20, 12)), nil)
+	cfg, err := DecodeConfig(bytes.NewReader(data))
 	require.NoError(t, err)
+	assert.Equal(t, image.Config{ColorModel: color.Gray16Model, Width: 20, Height: 12}, cfg)
 
-	bounds := decoded.Bounds()
-	assert.Equal(t, width, bounds.Dx())
-	assert.Equal(t, height, bounds.Dy())
+	_, err = DecodeConfig(bytes.NewReader([]byte{0xFF, 0x4F}))
+	assert.ErrorIs(t, err, ErrInvalidData)
+}
 
-	gray16, ok := decoded.(*image.Gray16)
-	require.True(t, ok, "decoded image should be Gray16")
-
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
-			expected := original.Gray16At(x, y).Y
-			actual := gray16.Gray16At(x, y).Y
-			assert.Equal(t, expected, actual, "pixel mismatch at (%d, %d)", x, y)
-		}
+func TestDecodeInvalidData(t *testing.T) {
+	for _, d := range [][]byte{nil, {0, 0}, {0xFF, 0x4F}, {0xFF, 0x4F, 0xFF}} {
+		_, err := decodeBytes(d)
+		assert.ErrorIs(t, err, ErrInvalidData, "% X", d)
 	}
 }
 
-func TestRoundTrip_RGBA(t *testing.T) {
-	width, height := 32, 32
-	original := image.NewRGBA(image.Rect(0, 0, width, height))
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
-			original.SetRGBA(x, y, color.RGBA{
-				R: uint8(x * 8),
-				G: uint8(y * 8),
-				B: uint8((x + y) * 4),
-				A: 255,
-			})
+func TestEncodeRejects(t *testing.T) {
+	img := gray16From(8, 8, patternPixels(0, 8, 8))
+	for _, opts := range []*Options{
+		{DecompLevels: 5, CodeBlockWidthExp: 11, CodeBlockHeightExp: 6},
+		{DecompLevels: 5, CodeBlockWidthExp: 6, CodeBlockHeightExp: 1},
+		{DecompLevels: 5, CodeBlockWidthExp: 8, CodeBlockHeightExp: 8},
+		{DecompLevels: 33, CodeBlockWidthExp: 6, CodeBlockHeightExp: 6},
+		{DecompLevels: -1, CodeBlockWidthExp: 6, CodeBlockHeightExp: 6},
+		{},
+	} {
+		assert.ErrorIs(t, Encode(&bytes.Buffer{}, img, opts), ErrInvalidData, "%+v", opts)
+	}
+	for _, img := range []image.Image{image.NewGray(image.Rect(0, 0, 4, 4)), image.NewRGBA(image.Rect(0, 0, 4, 4))} {
+		assert.ErrorIs(t, Encode(&bytes.Buffer{}, img, nil), ErrUnsupported)
+	}
+	assert.ErrorIs(t, Encode(&bytes.Buffer{}, image.NewGray16(image.Rect(0, 0, 0, 4)), nil), ErrInvalidData)
+	// 32769 columns cross the 2^15 default precinct.
+	assert.ErrorIs(t, Encode(&bytes.Buffer{}, image.NewGray16(image.Rect(0, 0, 32769, 1)), nil), ErrUnsupported)
+}
+
+// --- support matrix -------------------------------------------------------
+
+func validStream(t *testing.T) []byte {
+	t.Helper()
+	px := make([]uint16, 256)
+	for i := range px {
+		px[i] = uint16((i%16)*400 + (i/16)*40)
+	}
+	return encodeBytes(t, gray16From(16, 16, px), &Options{DecompLevels: 2, CodeBlockWidthExp: 6, CodeBlockHeightExp: 6})
+}
+
+func markerOff(t *testing.T, data []byte, m uint16) int {
+	t.Helper()
+	i := bytes.Index(data, binary.BigEndian.AppendUint16(nil, m))
+	require.GreaterOrEqual(t, i, 0)
+	return i
+}
+
+func TestSupportMatrixRejections(t *testing.T) {
+	type mutate func(t *testing.T, d []byte) []byte
+	set := func(m uint16, off int, b ...byte) mutate {
+		return func(t *testing.T, d []byte) []byte {
+			copy(d[markerOff(t, d, m)+off:], b)
+			return d
 		}
 	}
-
-	var buf bytes.Buffer
-	err := Encode(&buf, original, nil)
-	require.NoError(t, err)
-
-	decoded, err := Decode(bytes.NewReader(buf.Bytes()))
-	require.NoError(t, err)
-
-	bounds := decoded.Bounds()
-	assert.Equal(t, width, bounds.Dx())
-	assert.Equal(t, height, bounds.Dy())
-
-	rgba, ok := decoded.(*image.RGBA)
-	require.True(t, ok, "decoded image should be RGBA")
-
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
-			expected := original.RGBAAt(x, y)
-			actual := rgba.RGBAAt(x, y)
-			assert.Equal(t, expected.R, actual.R, "R mismatch at (%d, %d)", x, y)
-			assert.Equal(t, expected.G, actual.G, "G mismatch at (%d, %d)", x, y)
-			assert.Equal(t, expected.B, actual.B, "B mismatch at (%d, %d)", x, y)
+	insertBeforeSOT := func(seg ...byte) mutate {
+		return func(t *testing.T, d []byte) []byte {
+			sot := markerOff(t, d, MarkerSOT)
+			return append(append(append([]byte(nil), d[:sot]...), seg...), d[sot:]...)
 		}
+	}
+	for _, tc := range []struct {
+		name string
+		f    mutate
+		want error
+	}{
+		{"8-bit Ssiz", set(MarkerSIZ, 40, 7), ErrUnsupported},
+		{"signed Ssiz", set(MarkerSIZ, 40, 0x8F), ErrUnsupported},
+		{"Csiz=3", set(MarkerSIZ, 38, 0, 3), ErrInvalidData}, // Lsiz no longer matches
+		{"multi-tile", set(MarkerSIZ, 22, 0, 0, 0, 8), ErrUnsupported},
+		{"non-zero origin", set(MarkerSIZ, 14, 0, 0, 0, 1), ErrUnsupported},
+		{"RLCP progression", set(MarkerCOD, 5, 1), ErrUnsupported},
+		{"two layers", set(MarkerCOD, 6, 0, 2), ErrUnsupported},
+		{"MCT", set(MarkerCOD, 8, 1), ErrUnsupported},
+		{"cb_style", set(MarkerCOD, 12, 1), ErrUnsupported},
+		{"9/7 transform", set(MarkerCOD, 13, 0), ErrUnsupported},
+		{"SOP flag", set(MarkerCOD, 4, 2), ErrUnsupported},
+		{"precinct flag", set(MarkerCOD, 4, 1), ErrInvalidData}, // flag implies precinct bytes the COD lacks
+		{"quantized QCD", set(MarkerQCD, 4, 0x41), ErrUnsupported},
+		{"Mb >= 32", set(MarkerQCD, 4, 0xE0, 0xF8), ErrUnsupported},
+		{"εb = G = 0", set(MarkerQCD, 4, 0x00, 0x00), ErrInvalidData},
+		{"TNsot=2", set(MarkerSOT, 11, 2), ErrUnsupported},
+		{"tile index 1", set(MarkerSOT, 4, 0, 1), ErrUnsupported},
+		{"COC", insertBeforeSOT(0xFF, 0x53, 0x00, 0x03, 0x00), ErrUnsupported},
+		{"POC", insertBeforeSOT(0xFF, 0x5F, 0x00, 0x03, 0x00), ErrUnsupported},
+		{"unknown marker", insertBeforeSOT(0xFF, 0x30, 0x00, 0x02), ErrInvalidData},
+		{"duplicate COD", func(t *testing.T, d []byte) []byte {
+			c := markerOff(t, d, MarkerCOD)
+			return insertBeforeSOT(d[c:c+14]...)(t, d)
+		}, ErrInvalidData},
+		{"trailing garbage", func(_ *testing.T, d []byte) []byte { return append(d, 0) }, ErrInvalidData},
+		{"missing EOC", func(_ *testing.T, d []byte) []byte { return d[:len(d)-2] }, ErrInvalidData},
+		{"Go legacy Psot on a T.800 stream", func(t *testing.T, d []byte) []byte {
+			s := markerOff(t, d, MarkerSOT)
+			binary.BigEndian.PutUint32(d[s+6:], binary.BigEndian.Uint32(d[s+6:])-2)
+			return d
+		}, ErrInvalidData},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := decodeBytes(tc.f(t, validStream(t)))
+			assert.ErrorIs(t, err, tc.want)
+		})
 	}
 }
 
-func TestRoundTrip_SolidColor(t *testing.T) {
-	// Solid color should compress very well
-	width, height := 64, 64
-	original := image.NewGray(image.Rect(0, 0, width, height))
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
-			original.SetGray(x, y, color.Gray{Y: 128})
-		}
-	}
-
-	var buf bytes.Buffer
-	err := Encode(&buf, original, nil)
+// Psot = 0 means "to EOC" and is accepted; COM segments are skipped.
+func TestAcceptsPsotZeroAndComments(t *testing.T) {
+	d := validStream(t)
+	s := markerOff(t, d, MarkerSOT)
+	binary.BigEndian.PutUint32(d[s+6:], 0)
+	com := []byte{0xFF, 0x64, 0x00, 0x06, 0x00, 0x01, 'h', 'i'}
+	d = append(append(append([]byte(nil), d[:s]...), com...), d[s:]...)
+	_, err := decodeBytes(d)
 	require.NoError(t, err)
-
-	decoded, err := Decode(bytes.NewReader(buf.Bytes()))
-	require.NoError(t, err)
-
-	gray, ok := decoded.(*image.Gray)
-	require.True(t, ok)
-
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
-			assert.Equal(t, uint8(128), gray.GrayAt(x, y).Y)
-		}
-	}
 }
 
-func TestRoundTrip_NonPowerOfTwo(t *testing.T) {
-	// Test non-power-of-2 dimensions
-	width, height := 33, 27
-	original := image.NewGray(image.Rect(0, 0, width, height))
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
-			original.SetGray(x, y, color.Gray{Y: uint8((x * y) % 256)})
-		}
-	}
-
-	var buf bytes.Buffer
-	err := Encode(&buf, original, nil)
-	require.NoError(t, err)
-
-	decoded, err := Decode(bytes.NewReader(buf.Bytes()))
-	require.NoError(t, err)
-
-	bounds := decoded.Bounds()
-	assert.Equal(t, width, bounds.Dx())
-	assert.Equal(t, height, bounds.Dy())
-
-	gray, ok := decoded.(*image.Gray)
-	require.True(t, ok)
-
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
-			expected := original.GrayAt(x, y).Y
-			actual := gray.GrayAt(x, y).Y
-			assert.Equal(t, expected, actual, "pixel mismatch at (%d, %d)", x, y)
-		}
-	}
+func TestDecodeRejectsMultiPrecinct(t *testing.T) {
+	d := validStream(t)
+	s := markerOff(t, d, MarkerSIZ)
+	binary.BigEndian.PutUint32(d[s+6:], 32769)  // Xsiz
+	binary.BigEndian.PutUint32(d[s+22:], 32769) // XTsiz
+	_, err := decodeBytes(d)
+	assert.ErrorIs(t, err, ErrUnsupported)
 }
 
-func TestDecodeConfig_Gray(t *testing.T) {
-	width, height := 48, 32
-	img := image.NewGray(image.Rect(0, 0, width, height))
-
-	var buf bytes.Buffer
-	err := Encode(&buf, img, nil)
+func TestTruncationNeverPanics(t *testing.T) {
+	withMaxDecodedBytes(t, 1<<20)
+	d := validStream(t)
+	for cut := range len(d) {
+		_, err := decodeBytes(d[:cut])
+		require.Error(t, err, "cut %d", cut)
+	}
+	_, err := decodeBytes(d)
 	require.NoError(t, err)
-
-	config, err := DecodeConfig(bytes.NewReader(buf.Bytes()))
-	require.NoError(t, err)
-
-	assert.Equal(t, width, config.Width)
-	assert.Equal(t, height, config.Height)
-	assert.Equal(t, color.GrayModel, config.ColorModel)
-}
-
-func TestDecodeConfig_RGBA(t *testing.T) {
-	width, height := 48, 32
-	img := image.NewRGBA(image.Rect(0, 0, width, height))
-
-	var buf bytes.Buffer
-	err := Encode(&buf, img, nil)
-	require.NoError(t, err)
-
-	config, err := DecodeConfig(bytes.NewReader(buf.Bytes()))
-	require.NoError(t, err)
-
-	assert.Equal(t, width, config.Width)
-	assert.Equal(t, height, config.Height)
-	assert.Equal(t, color.RGBAModel, config.ColorModel)
-}
-
-func TestDefaultOptions(t *testing.T) {
-	opts := DefaultOptions()
-	assert.Equal(t, 5, opts.DecompLevels)
-	assert.Equal(t, 1, opts.NumLayers)
-	assert.Equal(t, ProgressionLRCP, opts.Progression)
-	assert.True(t, opts.UseMCT)
-}
-
-func BenchmarkEncode_Gray_64x64(b *testing.B) {
-	img := image.NewGray(image.Rect(0, 0, 64, 64))
-	for y := 0; y < 64; y++ {
-		for x := 0; x < 64; x++ {
-			img.SetGray(x, y, color.Gray{Y: uint8((x + y) % 256)})
-		}
-	}
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		var buf bytes.Buffer
-		Encode(&buf, img, nil)
-	}
-}
-
-func BenchmarkDecode_Gray_64x64(b *testing.B) {
-	img := image.NewGray(image.Rect(0, 0, 64, 64))
-	for y := 0; y < 64; y++ {
-		for x := 0; x < 64; x++ {
-			img.SetGray(x, y, color.Gray{Y: uint8((x + y) % 256)})
-		}
-	}
-
-	var buf bytes.Buffer
-	Encode(&buf, img, nil)
-	data := buf.Bytes()
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		Decode(bytes.NewReader(data))
-	}
-}
-
-func BenchmarkRoundTrip_Gray_256x256(b *testing.B) {
-	img := image.NewGray(image.Rect(0, 0, 256, 256))
-	for y := 0; y < 256; y++ {
-		for x := 0; x < 256; x++ {
-			img.SetGray(x, y, color.Gray{Y: uint8(x ^ y)})
-		}
-	}
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		var buf bytes.Buffer
-		Encode(&buf, img, nil)
-		Decode(bytes.NewReader(buf.Bytes()))
-	}
 }

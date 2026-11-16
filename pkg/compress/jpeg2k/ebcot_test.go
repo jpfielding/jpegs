@@ -8,9 +8,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var allBands = []Subband{SubbandLL, SubbandHL, SubbandLH, SubbandHH}
+var allBands = []bandKind{bandLL, bandHL, bandLH, bandHH}
 
-func blockRoundTrip(t *testing.T, coeffs []int32, w, h int, band Subband) {
+func blockRoundTrip(t *testing.T, coeffs []int32, w, h int, band bandKind) {
 	t.Helper()
 	cb := encodeCodeBlock(coeffs, w, h, band)
 	got, err := decodeCodeBlock(cb.data, w, h, band, cb.bitplanes, cb.passes)
@@ -27,11 +27,11 @@ func TestEBCOTOpenJPEGCodeBlockInterop(t *testing.T) {
 		coeffs[i] = -31768
 	}
 	opj := []byte{0x11, 0x50, 0x54, 0xa0, 0xe2, 0xa0, 0x00, 0x03, 0x09, 0x09, 0x48, 0x13, 0x00, 0x61, 0x1e, 0x62, 0x9c, 0x48, 0x3f}
-	cb := encodeCodeBlock(coeffs, 4, 4, SubbandLL)
+	cb := encodeCodeBlock(coeffs, 4, 4, bandLL)
 	assert.Equal(t, 15, cb.bitplanes)
 	assert.Equal(t, 43, cb.passes)
 	assert.Equal(t, opj, cb.data, "MQ codeword not byte-identical to OpenJPEG")
-	got, err := decodeCodeBlock(opj, 4, 4, SubbandLL, 15, 43)
+	got, err := decodeCodeBlock(opj, 4, 4, bandLL, 15, 43)
 	require.NoError(t, err)
 	assert.Equal(t, coeffs, got)
 }
@@ -47,11 +47,11 @@ func TestEBCOTGolden8x8(t *testing.T) {
 		151, 36, 157, 218, 120, 179, 42, 102, 230, 143, 83, 188, 48, 23, 249, 14, 55, 180, 3, 181,
 		230, 140, 33, 71, 227, 43, 255, 127,
 	}
-	cb := encodeCodeBlock(coeffs, 8, 8, SubbandHL)
+	cb := encodeCodeBlock(coeffs, 8, 8, bandHL)
 	assert.Equal(t, golden, cb.data)
 	assert.Equal(t, 7, cb.bitplanes)
 	assert.Equal(t, 19, cb.passes)
-	blockRoundTrip(t, coeffs, 8, 8, SubbandHL)
+	blockRoundTrip(t, coeffs, 8, 8, bandHL)
 }
 
 func TestEBCOTAllZeroIsEmpty(t *testing.T) {
@@ -137,18 +137,18 @@ func TestEBCOTTruncatedNoPanic(t *testing.T) {
 	for i := range coeffs {
 		coeffs[i] = int32(i*101%4096) - 2048
 	}
-	cb := encodeCodeBlock(coeffs, 64, 8, SubbandLH)
+	cb := encodeCodeBlock(coeffs, 64, 8, bandLH)
 	for cut := 0; cut <= len(cb.data); cut++ {
-		_, _ = decodeCodeBlock(cb.data[:cut], 64, 8, SubbandLH, cb.bitplanes, cb.passes)
+		_, _ = decodeCodeBlock(cb.data[:cut], 64, 8, bandLH, cb.bitplanes, cb.passes)
 	}
 }
 
 func TestEBCOTInvalidMetadata(t *testing.T) {
-	_, err := decodeCodeBlock(nil, 4, 4, SubbandLL, 3, 100)
+	_, err := decodeCodeBlock(nil, 4, 4, bandLL, 3, 100)
 	assert.ErrorIs(t, err, ErrInvalidData)
-	_, err = decodeCodeBlock(nil, 4, 4, SubbandLL, 0, 1)
+	_, err = decodeCodeBlock(nil, 4, 4, bandLL, 0, 1)
 	assert.ErrorIs(t, err, ErrInvalidData)
-	_, err = decodeCodeBlock(nil, 4, 4, SubbandLL, 32, 1)
+	_, err = decodeCodeBlock(nil, 4, 4, bandLL, 32, 1)
 	assert.ErrorIs(t, err, ErrInvalidData)
 }
 
