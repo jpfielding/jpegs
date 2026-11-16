@@ -39,32 +39,27 @@ func TestPackBitsRoundTrip(t *testing.T) {
 
 func TestDecodePackBits_Truncated(t *testing.T) {
 	tests := []struct {
-		name      string
-		input     []byte
-		errString string
+		name  string
+		input []byte
 	}{
 		{
-			name:      "TruncatedLiteral",
-			input:     []byte{0x02, 0x01}, // Literal run of 3 (n=2), but only 1 byte provided
-			errString: "rle: compressed data truncated in literal run",
+			name:  "TruncatedLiteral",
+			input: []byte{0x02, 0x01}, // Literal run of 3 (n=2), but only 1 byte provided
 		},
 		{
-			name:      "TruncatedReplicate",
-			input:     []byte{0xFE},                                      // Replicate run (n=-2 -> count=3), but value byte missing
-			errString: "rle: compressed data truncated in replicate run", // My implementation checks 'val' read
+			name:  "TruncatedReplicate",
+			input: []byte{0xFE}, // Replicate run (n=-2 -> count=3), but value byte missing
 		},
 		{
-			name:      "TruncatedLiteralBoundary",
-			input:     []byte{0x00}, // Literal run of 1 (n=0), but 0 bytes provided
-			errString: "rle: compressed data truncated in literal run",
+			name:  "TruncatedLiteralBoundary",
+			input: []byte{0x00}, // Literal run of 1 (n=0), but 0 bytes provided
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := decodePackBits(tt.input, 0)
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), tt.errString)
+			require.ErrorIs(t, err, ErrTruncated)
 		})
 	}
 }
