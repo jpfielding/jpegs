@@ -70,3 +70,25 @@ cjpeg -precision 8 -lossless 1 -outfile g8_psv1.jpg g8.pgm
 - `encode_roundtrip_via_djpeg` (only when `DICOS_INTEROP` is set and `djpeg` is
   on `PATH`): our encoder output is decoded by `djpeg` back to the source pixels
   across several predictors and a restart interval.
+
+## Go additions: predictors 5 and 6 with negative odd differences
+
+`g16.pgm` never produces a negative `Rb - Rc` or `Ra - Rc`, so the fixtures
+above cannot tell truncating `/2` from the arithmetic shift libjpeg-turbo
+uses. These do (24 rows x 33 columns, uniform random samples, numpy
+`default_rng(12)`, drawn in the order P=8, 12, 16):
+
+```python
+rng = np.random.default_rng(12)
+for prec in (8, 12, 16):
+    px = rng.integers(0, 1 << prec, (24, 33))   # written as q12_r{prec}.pgm
+```
+
+```sh
+for p in 12 16; do for psv in 5 6; do
+  cjpeg -precision $p -lossless $psv -outfile q12_r${p}_psv$psv.jpg q12_r$p.pgm
+done; done
+```
+
+Generated with libjpeg-turbo 3.2.1. `djpeg` and pylibjpeg-libjpeg 2.3.0
+(Thomas Richter's libjpeg) both decode them back to the source images.
