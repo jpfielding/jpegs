@@ -169,6 +169,9 @@ func (d *Decoder) readSOF() error {
 		return err
 	}
 	length := int(lenBuf[0])<<8 | int(lenBuf[1]) - 2
+	if length < 6 {
+		return fmt.Errorf("jpegli: SOF segment too short (%d bytes)", length)
+	}
 
 	data := make([]byte, length)
 	if _, err := io.ReadFull(d.r, data); err != nil {
@@ -179,6 +182,19 @@ func (d *Decoder) readSOF() error {
 	d.height = int(data[1])<<8 | int(data[2])
 	d.width = int(data[3])<<8 | int(data[4])
 	d.components = int(data[5])
+	if d.precision < 2 || d.precision > 16 {
+		return fmt.Errorf("jpegli: invalid precision %d", d.precision)
+	}
+	if len(data) < 6+d.components*3 {
+		return fmt.Errorf("jpegli: SOF segment length %d too short for %d components", len(data), d.components)
+	}
+	bytesPerSample := 1
+	if d.precision > 8 {
+		bytesPerSample = 2
+	}
+	if err := checkDecodedSize(d.width, d.height, d.components, bytesPerSample); err != nil {
+		return err
+	}
 
 	d.compInfo = make([]componentInfo, d.components)
 	for i := 0; i < d.components; i++ {
