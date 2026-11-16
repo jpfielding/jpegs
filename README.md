@@ -8,7 +8,7 @@ This package provides pure Go implementations of lossless image compression form
 |---------|--------|-------------|
 | [jpeg2k](jpeg2k/) | JPEG 2000 | Wavelet-based, excellent compression |
 | [jpegli](jpegli/) | JPEG Lossless | Traditional DPCM-based |
-| [jpegls](jpegls/) | JPEG-LS | LOCO-I algorithm, very efficient |
+| [jpegls](jpegls/) | JPEG-LS | LOCO-I algorithm, ITU-T T.87 conformant |
 | [rle](rle/) | RLE (PackBits) | Run-length encoding |
 
 ## Feature Comparison
@@ -19,7 +19,7 @@ This package provides pure Go implementations of lossless image compression form
 | Near-lossless | No | No | Yes | No |
 | 8-bit Gray | Yes | Yes | Yes | Yes |
 | 16-bit Gray | Yes | Yes | Yes | Yes |
-| RGB | Yes | No | No | No |
+| RGB | Yes | No | Decode only (planar) | No |
 | Compression Ratio | Excellent | Good | Excellent | Fair |
 | Speed | Moderate | Fast | Fast | Very Fast |
 

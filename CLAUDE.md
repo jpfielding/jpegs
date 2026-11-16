@@ -48,7 +48,7 @@ Exception: `rle.Decode` requires raw data plus width/height parameters.
 
 ### Key Implementation Concepts
 
-- **jpegls**: Context-based adaptive prediction (365 contexts), Golomb-Rice entropy coding, gradient quantization, median edge detection predictor. Supports near-lossless via `Near` parameter. Run mode exists but is currently disabled.
+- **jpegls**: ITU-T T.87 conformant (verified against dicos.rs and CharLS): context-based adaptive prediction (365 contexts + 2 run-interruption contexts), length-limited Golomb coding, run mode, near-lossless via `Near`, precision 2..16 via `Precision`. `Decode` falls back to a frozen decoder (`legacy.go`) for the pre-conformance streams this package used to write. See `pkg/compress/jpegls/README.md` for scope.
 - **jpeg2k**: 5/3 reversible DWT, tile-based encoding, MQ arithmetic coder, EBCOT block coding (Tier-1), reversible color transform for RGB.
 - **jpegli**: 7 predictor modes (1-7), Huffman entropy coding, DPCM prediction.
 - **rle**: Byte-plane separation for 16-bit images, Apple PackBits encoding with 64-byte segment header format.
